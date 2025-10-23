@@ -2,15 +2,15 @@ import tkinter as tk
 import random
 
 # --- 상수 설정 ---
-WIDTH = 400         # 창 너비
-HEIGHT = 600        # 창 높이
-GRAVITY = 0.6       # 중력
-JUMP_STRENGTH = -10 # 점프 시 속도
-GAME_SPEED_MS = 20  # 게임 루프 간격 (밀리초)
-PIPE_SPEED = 5      # 파이프 이동 속도
-PIPE_GAP = 150      # 파이프 사이 간격
-PIPE_WIDTH = 60     # 파이프 너비
-PIPE_SPAWN_MS = 1500 # 파이프 생성 간격 (밀리초)
+WIDTH = 400
+HEIGHT = 600
+GRAVITY = 0.6
+JUMP_STRENGTH = -10
+GAME_SPEED_MS = 20
+PIPE_SPEED = 5
+PIPE_GAP = 150
+PIPE_WIDTH = 60
+PIPE_SPAWN_MS = 1500
 
 class FlappyBirdGame:
     def __init__(self, root):
@@ -32,10 +32,12 @@ class FlappyBirdGame:
         self.bird_y = HEIGHT // 2
         self.velocity = 0
         self.game_over = False
-        self.pipe_pairs = [] # (top_pipe, bottom_pipe, passed)
+        self.pipe_pairs = []
+        
+        # [추가] 파이프 생성 타이머의 ID를 저장할 변수
+        self.pipe_timer = None 
 
-        # 새 만들기 (간단한 사각형)
-        self.bird = self.canvas.create_rectangle(
+        self.bird = self.canvas.create_oval(
             WIDTH // 4 - 15, self.bird_y - 15,
             WIDTH // 4 + 15, self.bird_y + 15,
             fill="yellow", outline="black"
@@ -43,9 +45,9 @@ class FlappyBirdGame:
 
         # 스페이스바 입력 바인딩
         self.canvas.bind_all("<space>", self.jump)
-        self.canvas.bind_all("<Button-1>", self.jump) # 마우스 클릭으로도 점프
+        self.canvas.bind_all("<Button-1>", self.jump)
 
-        # 게임 시작
+        #게임 시작
         self.start_game()
 
     def start_game(self):
@@ -69,7 +71,7 @@ class FlappyBirdGame:
         
         # 2. 파이프 이동 및 관리
         new_pipe_pairs = []
-        scored = False # 한 프레임에 중복 점수 방지
+        scored = False
 
         for top_pipe, bottom_pipe, passed in self.pipe_pairs:
             self.canvas.move(top_pipe, -PIPE_SPEED, 0)
@@ -77,8 +79,7 @@ class FlappyBirdGame:
 
             pipe_coords = self.canvas.coords(top_pipe)
             
-            # 파이프가 화면 밖으로 나갔는지 확인
-            if pipe_coords[2] < 0: # (x1, y1, x2, y2) -> x2가 0보다 작으면
+            if pipe_coords and pipe_coords[2] < 0: 
                 self.canvas.delete(top_pipe)
                 self.canvas.delete(bottom_pipe)
             else:
@@ -86,7 +87,7 @@ class FlappyBirdGame:
                 bird_coords = self.canvas.coords(self.bird)
                 if not passed and pipe_coords[2] < bird_coords[0]: # 파이프의 오른쪽 끝이 새의 왼쪽 끝을 지났을 때
                     passed = True
-                    if not scored: # 이 프레임에서 아직 점수를 얻지 않았다면
+                    if not scored:
                         self.score += 1
                         self.score_label.config(text=f"Score: {self.score}")
                         scored = True
@@ -126,14 +127,16 @@ class FlappyBirdGame:
         # 파이프 리스트에 추가 (점수 획득 여부 'False'로)
         self.pipe_pairs.append((top_pipe, bottom_pipe, False))
 
-        # 다음 파이프 생성 예약
-        self.root.after(PIPE_SPAWN_MS, self.create_pipe)
+        #삭제를 위해 타이머를 저장
+        self.pipe_timer = self.root.after(PIPE_SPAWN_MS, self.create_pipe)
 
     def check_collisions(self):
         """새가 파이프나 경계에 부딪혔는지 검사합니다."""
         bird_coords = self.canvas.coords(self.bird)
         
-        # 1. 화면 상단/하단 경계 충돌
+        if not bird_coords: 
+            return
+
         if bird_coords[1] <= 0 or bird_coords[3] >= HEIGHT:
             self.end_game()
             return
@@ -148,17 +151,63 @@ class FlappyBirdGame:
 
     def end_game(self):
         """게임 오버 처리를 합니다."""
-        if self.game_over: 
+        if self.game_over:
             return
             
         self.game_over = True
+        
         self.canvas.create_text(
-            WIDTH // 2, HEIGHT // 2,
+            WIDTH // 2, HEIGHT // 2 - 40,
             text="GAME OVER",
             font=("Arial", 40, "bold"),
-            fill="black"
+            fill="black",
+            tags="gameover" # 텍스트에도 태그를 달아 쉽게 지울 수 있게 함
         )
+        
+        self.restart_button = tk.Button(
+            self.root, 
+            text="Restart", 
+            font=("Arial", 20), 
+            command=self.restart_game
+        )
+        
+        self.restart_button.place(
+            x=WIDTH // 2, 
+            y=HEIGHT // 2 + 30, 
+            anchor="center"
+        )
+        
         print(f"Final Score: {self.score}")
+
+    def restart_game(self):
+        """게임을 초기 상태로 리셋하고 다시 시작합니다."""
+        
+        # [추가] 재시작 시, 예약되어 있던 이전 게임의 파이프 생성 타이머를 취소
+        if self.pipe_timer:
+            self.root.after_cancel(self.pipe_timer)
+            self.pipe_timer = None # 타이머 변수 초기화
+        
+        # 1. 게임 상태 변수 초기화
+        self.game_over = False
+        self.score = 0
+        self.bird_y = HEIGHT // 2
+        self.velocity = 0
+        self.pipe_pairs = []
+
+        # 2. GUI 요소 리셋
+        self.score_label.config(text=f"Score: {self.score}")
+        self.canvas.delete("all") # 캔버스의 모든 그림 (새, 파이프, 텍스트) 삭제
+        self.restart_button.destroy() # 재시작 버튼 위젯 자체를 파괴
+
+        # 3. 새 다시 만들기 (원으로)
+        self.bird = self.canvas.create_oval(
+            WIDTH // 4 - 15, self.bird_y - 15,
+            WIDTH // 4 + 15, self.bird_y + 15,
+            fill="yellow", outline="black"
+        )
+
+        # 4. 게임 루프 다시 시작
+        self.start_game()
 
 # --- 메인 코드 ---
 if __name__ == "__main__":
